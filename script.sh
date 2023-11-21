@@ -1,55 +1,51 @@
+#!/bin/bash
+
 # Variables
-DB_INSTANCE_IDENTIFIER="mi-db-instance"
-DB_NAME="mi-base-de-datos"
+DB_INSTANCE_IDENTIFIER="mydawdbjuan"
+DB_ENGINE="mysql"
 DB_MASTER_USERNAME="root"
-DB_MASTER_PASSWORD="root1234"
-DB_SECURITY_GROUP_NAME="mi-grupo-seguridad"
+DB_MASTER_PASSWORD="rooot1234"
+DB_NAME="dbjuan"
+DB_INSTANCE_CLASS="db.t2.micro"
+DB_ALLOCATED_STORAGE=20
+DB_PORT=3306
 
-# Crear la instancia de base de datos MySQL
-aws rds create-db-instance \
-    --db-instance-identifier $DB_INSTANCE_IDENTIFIER \
-    --db-instance-class db.t2.micro \
-    --engine mysql \
-    --allocated-storage 20 \
-    --master-username $DB_MASTER_USERNAME \
-    --master-user-password $DB_MASTER_PASSWORD \
-    --enable-publicly-accessible \
-    --no-auto-minor-version-upgrade \
-    --enable-cloudwatch-logs-exports '["error","general","slowquery","audit"]'
-
-# Esperar a que la instancia esté disponible
-echo "Esperando a que la instancia de base de datos esté disponible..."
-aws rds wait db-instance-available --db-instance-identifier $DB_INSTANCE_IDENTIFIER
-echo "Instancia de base de datos creada correctamente."
-
-# Crear un grupo de seguridad
+# Crear grupo de seguridad para permitir la conexión desde MySQL Workbench
 aws ec2 create-security-group \
-    --group-name $DB_SECURITY_GROUP_NAME \
-    --description "Grupo de seguridad para la base de datos MySQL"
+    --group-name mysql-workbench-sg \
+    --description "Grupo de seguridad para MySQL Workbench"
 
 # Obtener el ID del grupo de seguridad recién creado
-DB_SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
-    --group-names $DB_SECURITY_GROUP_NAME \
-    --query 'SecurityGroups[0].GroupId' \
-    --output text)
+SECURITY_GROUP_ID=$(aws ec2 describe-security-groups --group-names mysql-workbench-sg --query "SecurityGroups[0].GroupId" --output text)
 
-# Agregar reglas al grupo de seguridad
+# Autorizar el tráfico en el puerto de la base de datos desde MySQL Workbench
 aws ec2 authorize-security-group-ingress \
-    --group-id $DB_SECURITY_GROUP_ID \
+    --group-id $SECURITY_GROUP_ID \
     --protocol tcp \
-    --port 3306 \
+    --port $DB_PORT \
     --cidr 0.0.0.0/0
-
-# Asociar el grupo de seguridad a la instancia de base de datos
-aws rds modify-db-instance \
+# Crear instancia de base de datos RDS
+aws rds create-db-instance \
     --db-instance-identifier $DB_INSTANCE_IDENTIFIER \
-    --vpc-security-group-ids $DB_SECURITY_GROUP_ID
+    --db-instance-class $DB_INSTANCE_CLASS \
+    --engine $DB_ENGINE \
+    --master-username $DB_MASTER_USERNAME \
+    --master-user-password $DB_MASTER_PASSWORD \
+    --allocated-storage $DB_ALLOCATED_STORAGE \
+    --vpc-security-group-ids $SECURITY_GROUP_ID \
+    --db-name $DB_NAME \
+    --port $DB_PORT
 
-# Habilitar autenticación de contraseña para la instancia de base de datos
-aws rds modify-db-instance \
-    --db-instance-identifier $DB_INSTANCE_IDENTIFIER \
-    --apply-immediately \
-    --no-enable-iam-database-authentication
+# Esperar hasta que la instancia esté disponible
+echo "Esperando a que la instancia de la base de datos esté disponible..."
+aws rds wait db-instance-available --db-instance-identifier $DB_INSTANCE_IDENTIFIER
+echo "La instancia de la base de datos está disponible."
 
-echo "Configuración completada."
+# Obtener el endpoint de la instancia de la base de datos
+DB_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier $DB_INSTANCE_IDENTIFIER --query "DBInstances[0].Endpoint.Address" --output text)
 
+
+
+echo "La instancia de la base de datos ha sido creada y el grupo de seguridad para MySQL Workbench ha sido configurado."
+echo "Endpoint de la base de datos: $DB_ENDPOINT"
+echo "ID del grupo de seguridad: $SECURITY_GROUP_ID"
